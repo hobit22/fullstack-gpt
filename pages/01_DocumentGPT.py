@@ -11,6 +11,10 @@ st.set_page_config(
     page_icon="📃",
 )
 
+if "messages" not in st.session_state:
+    st.session_state["messages"] = []
+
+@st.cache_data(show_spinner="Embedding file...")
 def embed_file(file):
     file_content = file.read()
     file_path = f"./.cache/files/{file.name}"
@@ -30,6 +34,17 @@ def embed_file(file):
     retriever = vectorstore.as_retriever()
     return retriever
 
+def send_message(message, role, save=True):
+    with st.chat_message(role):
+        st.markdown(message)
+    if save:
+        st.session_state["messages"].append({"message":message, "role": role})
+
+
+def paint_history():
+    for message in st.session_state["messages"]:
+        send_message(message["message"], message["role"], save=False)
+
 
 st.title("DocumentGPT")
 
@@ -38,15 +53,26 @@ st.markdown(
 Welcome!
             
 Use this chatbot to ask questions to an AI about your files!
+
+Upload your files on the sidebar.
 """
 )
 
-file = st.file_uploader(
-    "Upload a .txt .pdf or .docx file",
-    type=["pdf", "txt", "docx"],
-)
+with st.sidebar:
+    file = st.file_uploader(
+        "Upload a .txt .pdf or .docx file",
+        type=["pdf", "txt", "docx"],
+    )
 
 if file:
     retriever = embed_file(file)
-    s = retriever.invoke("winston")
-    s
+
+    send_message("I'm ready.", "ai", save=False)
+    paint_history()
+    message = st.chat_input("Ask anything about your file")
+
+    if message:
+        send_message(message, "human")
+        send_message("lalala", "ai")
+else:
+    st.session_state["messages"] = []

@@ -1,0 +1,679 @@
+Interface
+To make it as easy as possible to create custom chains, we've implemented a "Runnable" protocol. The Runnable protocol is implemented for most components. This is a standard interface, which makes it easy to define custom chains as well as invoke them in a standard way. The standard interface includes:
+
+stream: stream back chunks of the response
+invoke: call the chain on an input
+batch: call the chain on a list of inputs
+These also have corresponding async methods:
+
+astream: stream back chunks of the response async
+ainvoke: call the chain on an input async
+abatch: call the chain on a list of inputs async
+astream_log: stream back intermediate steps as they happen, in addition to the final response
+The input type and output type varies by component:
+
+Component	Input Type	Output Type
+Prompt	Dictionary	PromptValue
+ChatModel	Single string, list of chat messages or a PromptValue	ChatMessage
+LLM	Single string, list of chat messages or a PromptValue	String
+OutputParser	The output of an LLM or ChatModel	Depends on the parser
+Retriever	Single string	List of Documents
+Tool	Single string or dictionary, depending on the tool	Depends on the tool
+All runnables expose input and output schemas to inspect the inputs and outputs:
+
+input_schema: an input Pydantic model auto-generated from the structure of the Runnable
+output_schema: an output Pydantic model auto-generated from the structure of the Runnable
+Let's take a look at these methods. To do so, we'll create a super simple PromptTemplate + ChatModel chain.
+
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
+
+model = ChatOpenAI()
+prompt = ChatPromptTemplate.from_template("tell me a joke about {topic}")
+chain = prompt | model
+
+Input Schema
+A description of the inputs accepted by a Runnable. This is a Pydantic model dynamically generated from the structure of any Runnable. You can call .schema() on it to obtain a JSONSchema representation.
+
+# The input schema of the chain is the input schema of its first part, the prompt.
+chain.input_schema.schema()
+
+
+    {'title': 'PromptInput',
+     'type': 'object',
+     'properties': {'topic': {'title': 'Topic', 'type': 'string'}}}
+
+prompt.input_schema.schema()
+
+    {'title': 'PromptInput',
+     'type': 'object',
+     'properties': {'topic': {'title': 'Topic', 'type': 'string'}}}
+
+model.input_schema.schema()
+
+    {'title': 'ChatOpenAIInput',
+     'anyOf': [{'type': 'string'},
+      {'$ref': '#/definitions/StringPromptValue'},
+      {'$ref': '#/definitions/ChatPromptValueConcrete'},
+      {'type': 'array',
+       'items': {'anyOf': [{'$ref': '#/definitions/AIMessage'},
+         {'$ref': '#/definitions/HumanMessage'},
+         {'$ref': '#/definitions/ChatMessage'},
+         {'$ref': '#/definitions/SystemMessage'},
+         {'$ref': '#/definitions/FunctionMessage'}]}}],
+     'definitions': {'StringPromptValue': {'title': 'StringPromptValue',
+       'description': 'String prompt value.',
+       'type': 'object',
+       'properties': {'text': {'title': 'Text', 'type': 'string'},
+        'type': {'title': 'Type',
+         'default': 'StringPromptValue',
+         'enum': ['StringPromptValue'],
+         'type': 'string'}},
+       'required': ['text']},
+      'AIMessage': {'title': 'AIMessage',
+       'description': 'A Message from an AI.',
+       'type': 'object',
+       'properties': {'content': {'title': 'Content', 'type': 'string'},
+        'additional_kwargs': {'title': 'Additional Kwargs', 'type': 'object'},
+        'type': {'title': 'Type',
+         'default': 'ai',
+         'enum': ['ai'],
+         'type': 'string'},
+        'example': {'title': 'Example', 'default': False, 'type': 'boolean'}},
+       'required': ['content']},
+      'HumanMessage': {'title': 'HumanMessage',
+       'description': 'A Message from a human.',
+       'type': 'object',
+       'properties': {'content': {'title': 'Content', 'type': 'string'},
+        'additional_kwargs': {'title': 'Additional Kwargs', 'type': 'object'},
+        'type': {'title': 'Type',
+         'default': 'human',
+         'enum': ['human'],
+         'type': 'string'},
+        'example': {'title': 'Example', 'default': False, 'type': 'boolean'}},
+       'required': ['content']},
+      'ChatMessage': {'title': 'ChatMessage',
+       'description': 'A Message that can be assigned an arbitrary speaker (i.e. role).',
+       'type': 'object',
+       'properties': {'content': {'title': 'Content', 'type': 'string'},
+        'additional_kwargs': {'title': 'Additional Kwargs', 'type': 'object'},
+        'type': {'title': 'Type',
+         'default': 'chat',
+         'enum': ['chat'],
+         'type': 'string'},
+        'role': {'title': 'Role', 'type': 'string'}},
+       'required': ['content', 'role']},
+      'SystemMessage': {'title': 'SystemMessage',
+       'description': 'A Message for priming AI behavior, usually passed in as the first of a sequence\nof input messages.',
+       'type': 'object',
+       'properties': {'content': {'title': 'Content', 'type': 'string'},
+        'additional_kwargs': {'title': 'Additional Kwargs', 'type': 'object'},
+        'type': {'title': 'Type',
+         'default': 'system',
+         'enum': ['system'],
+         'type': 'string'}},
+       'required': ['content']},
+      'FunctionMessage': {'title': 'FunctionMessage',
+       'description': 'A Message for passing the result of executing a function back to a model.',
+       'type': 'object',
+       'properties': {'content': {'title': 'Content', 'type': 'string'},
+        'additional_kwargs': {'title': 'Additional Kwargs', 'type': 'object'},
+        'type': {'title': 'Type',
+         'default': 'function',
+         'enum': ['function'],
+         'type': 'string'},
+        'name': {'title': 'Name', 'type': 'string'}},
+       'required': ['content', 'name']},
+      'ChatPromptValueConcrete': {'title': 'ChatPromptValueConcrete',
+       'description': 'Chat prompt value which explicitly lists out the message types it accepts.\nFor use in external schemas.',
+       'type': 'object',
+       'properties': {'messages': {'title': 'Messages',
+         'type': 'array',
+         'items': {'anyOf': [{'$ref': '#/definitions/AIMessage'},
+           {'$ref': '#/definitions/HumanMessage'},
+           {'$ref': '#/definitions/ChatMessage'},
+           {'$ref': '#/definitions/SystemMessage'},
+           {'$ref': '#/definitions/FunctionMessage'}]}},
+        'type': {'title': 'Type',
+         'default': 'ChatPromptValueConcrete',
+         'enum': ['ChatPromptValueConcrete'],
+         'type': 'string'}},
+       'required': ['messages']}}}
+
+
+Output Schema
+A description of the outputs produced by a Runnable. This is a Pydantic model dynamically generated from the structure of any Runnable. You can call .schema() on it to obtain a JSONSchema representation.
+
+# The output schema of the chain is the output schema of its last part, in this case a ChatModel, which outputs a ChatMessage
+chain.output_schema.schema()
+
+
+    {'title': 'ChatOpenAIOutput',
+     'anyOf': [{'$ref': '#/definitions/HumanMessage'},
+      {'$ref': '#/definitions/AIMessage'},
+      {'$ref': '#/definitions/ChatMessage'},
+      {'$ref': '#/definitions/FunctionMessage'},
+      {'$ref': '#/definitions/SystemMessage'}],
+     'definitions': {'HumanMessage': {'title': 'HumanMessage',
+       'description': 'A Message from a human.',
+       'type': 'object',
+       'properties': {'content': {'title': 'Content', 'type': 'string'},
+        'additional_kwargs': {'title': 'Additional Kwargs', 'type': 'object'},
+        'type': {'title': 'Type',
+         'default': 'human',
+         'enum': ['human'],
+         'type': 'string'},
+        'example': {'title': 'Example', 'default': False, 'type': 'boolean'}},
+       'required': ['content']},
+      'AIMessage': {'title': 'AIMessage',
+       'description': 'A Message from an AI.',
+       'type': 'object',
+       'properties': {'content': {'title': 'Content', 'type': 'string'},
+        'additional_kwargs': {'title': 'Additional Kwargs', 'type': 'object'},
+        'type': {'title': 'Type',
+         'default': 'ai',
+         'enum': ['ai'],
+         'type': 'string'},
+        'example': {'title': 'Example', 'default': False, 'type': 'boolean'}},
+       'required': ['content']},
+      'ChatMessage': {'title': 'ChatMessage',
+       'description': 'A Message that can be assigned an arbitrary speaker (i.e. role).',
+       'type': 'object',
+       'properties': {'content': {'title': 'Content', 'type': 'string'},
+        'additional_kwargs': {'title': 'Additional Kwargs', 'type': 'object'},
+        'type': {'title': 'Type',
+         'default': 'chat',
+         'enum': ['chat'],
+         'type': 'string'},
+        'role': {'title': 'Role', 'type': 'string'}},
+       'required': ['content', 'role']},
+      'FunctionMessage': {'title': 'FunctionMessage',
+       'description': 'A Message for passing the result of executing a function back to a model.',
+       'type': 'object',
+       'properties': {'content': {'title': 'Content', 'type': 'string'},
+        'additional_kwargs': {'title': 'Additional Kwargs', 'type': 'object'},
+        'type': {'title': 'Type',
+         'default': 'function',
+         'enum': ['function'],
+         'type': 'string'},
+        'name': {'title': 'Name', 'type': 'string'}},
+       'required': ['content', 'name']},
+      'SystemMessage': {'title': 'SystemMessage',
+       'description': 'A Message for priming AI behavior, usually passed in as the first of a sequence\nof input messages.',
+       'type': 'object',
+       'properties': {'content': {'title': 'Content', 'type': 'string'},
+        'additional_kwargs': {'title': 'Additional Kwargs', 'type': 'object'},
+        'type': {'title': 'Type',
+         'default': 'system',
+         'enum': ['system'],
+         'type': 'string'}},
+       'required': ['content']}}}
+
+
+Stream
+for s in chain.stream({"topic": "bears"}):
+    print(s.content, end="", flush=True)
+
+    Why don't bears wear shoes?
+    
+    Because they already have bear feet!
+
+Invoke
+chain.invoke({"topic": "bears"})
+
+    AIMessage(content="Why don't bears wear shoes?\n\nBecause they already have bear feet!")
+
+
+Batch
+chain.batch([{"topic": "bears"}, {"topic": "cats"}])
+
+    [AIMessage(content="Why don't bears wear shoes?\n\nBecause they have bear feet!"),
+     AIMessage(content="Why don't cats play poker in the wild?\n\nToo many cheetahs!")]
+
+
+You can set the number of concurrent requests by using the max_concurrency parameter
+
+chain.batch([{"topic": "bears"}, {"topic": "cats"}], config={"max_concurrency": 5})
+
+
+    [AIMessage(content="Why don't bears wear shoes? \n\nBecause they have bear feet!"),
+     AIMessage(content="Why don't cats play poker in the wild?\n\nToo many cheetahs!")]
+
+
+Async Stream
+async for s in chain.astream({"topic": "bears"}):
+    print(s.content, end="", flush=True)
+
+    Sure, here's a bear-themed joke for you:
+    
+    Why don't bears wear shoes?
+    
+    Because they already have bear feet!
+
+Async Invoke
+await chain.ainvoke({"topic": "bears"})
+
+    AIMessage(content="Why don't bears wear shoes? \n\nBecause they have bear feet!")
+
+
+Async Batch
+await chain.abatch([{"topic": "bears"}])
+
+    [AIMessage(content="Why don't bears wear shoes?\n\nBecause they have bear feet!")]
+
+
+Async Stream Intermediate Steps
+All runnables also have a method .astream_log() which is used to stream (as they happen) all or part of the intermediate steps of your chain/sequence.
+
+This is useful to show progress to the user, to use intermediate results, or to debug your chain.
+
+You can stream all steps (default) or include/exclude steps by name, tags or metadata.
+
+This method yields JSONPatch ops that when applied in the same order as received build up the RunState.
+
+class LogEntry(TypedDict):
+    id: str
+    """ID of the sub-run."""
+    name: str
+    """Name of the object being run."""
+    type: str
+    """Type of the object being run, eg. prompt, chain, llm, etc."""
+    tags: List[str]
+    """List of tags for the run."""
+    metadata: Dict[str, Any]
+    """Key-value pairs of metadata for the run."""
+    start_time: str
+    """ISO-8601 timestamp of when the run started."""
+
+    streamed_output_str: List[str]
+    """List of LLM tokens streamed by this run, if applicable."""
+    final_output: Optional[Any]
+    """Final output of this run.
+    Only available after the run has finished successfully."""
+    end_time: Optional[str]
+    """ISO-8601 timestamp of when the run ended.
+    Only available after the run has finished."""
+
+
+class RunState(TypedDict):
+    id: str
+    """ID of the run."""
+    streamed_output: List[Any]
+    """List of output chunks streamed by Runnable.stream()"""
+    final_output: Optional[Any]
+    """Final output of the run, usually the result of aggregating (`+`) streamed_output.
+    Only available after the run has finished successfully."""
+
+    logs: Dict[str, LogEntry]
+    """Map of run names to sub-runs. If filters were supplied, this list will
+    contain only the runs that matched the filters."""
+
+
+Streaming JSONPatch chunks
+This is useful eg. to stream the JSONPatch in an HTTP server, and then apply the ops on the client to rebuild the run state there. See LangServe for tooling to make it easier to build a webserver from any Runnable.
+
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.schema.output_parser import StrOutputParser
+from langchain.schema.runnable import RunnablePassthrough
+from langchain.vectorstores import FAISS
+
+template = """Answer the question based only on the following context:
+{context}
+
+Question: {question}
+"""
+prompt = ChatPromptTemplate.from_template(template)
+
+vectorstore = FAISS.from_texts(
+    ["harrison worked at kensho"], embedding=OpenAIEmbeddings()
+)
+retriever = vectorstore.as_retriever()
+
+retrieval_chain = (
+    {
+        "context": retriever.with_config(run_name="Docs"),
+        "question": RunnablePassthrough(),
+    }
+    | prompt
+    | model
+    | StrOutputParser()
+)
+
+async for chunk in retrieval_chain.astream_log(
+    "where did harrison work?", include_names=["Docs"]
+):
+    print("-" * 40)
+    print(chunk)
+
+    ----------------------------------------
+    RunLogPatch({'op': 'replace',
+      'path': '',
+      'value': {'final_output': None,
+                'id': 'e2f2cc72-eb63-4d20-8326-237367482efb',
+                'logs': {},
+                'streamed_output': []}})
+    ----------------------------------------
+    RunLogPatch({'op': 'add',
+      'path': '/logs/Docs',
+      'value': {'end_time': None,
+                'final_output': None,
+                'id': '8da492cc-4492-4e74-b8b0-9e60e8693390',
+                'metadata': {},
+                'name': 'Docs',
+                'start_time': '2023-10-19T17:50:13.526',
+                'streamed_output_str': [],
+                'tags': ['map:key:context', 'FAISS'],
+                'type': 'retriever'}})
+    ----------------------------------------
+    RunLogPatch({'op': 'add',
+      'path': '/logs/Docs/final_output',
+      'value': {'documents': [Document(page_content='harrison worked at kensho')]}},
+     {'op': 'add',
+      'path': '/logs/Docs/end_time',
+      'value': '2023-10-19T17:50:13.713'})
+    ----------------------------------------
+    RunLogPatch({'op': 'add', 'path': '/streamed_output/-', 'value': ''})
+    ----------------------------------------
+    RunLogPatch({'op': 'add', 'path': '/streamed_output/-', 'value': 'H'})
+    ----------------------------------------
+    RunLogPatch({'op': 'add', 'path': '/streamed_output/-', 'value': 'arrison'})
+    ----------------------------------------
+    RunLogPatch({'op': 'add', 'path': '/streamed_output/-', 'value': ' worked'})
+    ----------------------------------------
+    RunLogPatch({'op': 'add', 'path': '/streamed_output/-', 'value': ' at'})
+    ----------------------------------------
+    RunLogPatch({'op': 'add', 'path': '/streamed_output/-', 'value': ' Kens'})
+    ----------------------------------------
+    RunLogPatch({'op': 'add', 'path': '/streamed_output/-', 'value': 'ho'})
+    ----------------------------------------
+    RunLogPatch({'op': 'add', 'path': '/streamed_output/-', 'value': '.'})
+    ----------------------------------------
+    RunLogPatch({'op': 'add', 'path': '/streamed_output/-', 'value': ''})
+    ----------------------------------------
+    RunLogPatch({'op': 'replace',
+      'path': '/final_output',
+      'value': {'output': 'Harrison worked at Kensho.'}})
+
+
+Streaming the incremental RunState
+You can simply pass diff=False to get incremental values of RunState. You get more verbose output with more repetitive parts.
+
+async for chunk in retrieval_chain.astream_log(
+    "where did harrison work?", include_names=["Docs"], diff=False
+):
+    print("-" * 70)
+    print(chunk)
+
+    ----------------------------------------------------------------------
+    RunLog({'final_output': None,
+     'id': 'afe66178-d75f-4c2d-b348-b1d144239cd6',
+     'logs': {},
+     'streamed_output': []})
+    ----------------------------------------------------------------------
+    RunLog({'final_output': None,
+     'id': 'afe66178-d75f-4c2d-b348-b1d144239cd6',
+     'logs': {'Docs': {'end_time': None,
+                       'final_output': None,
+                       'id': '88d51118-5756-4891-89c5-2f6a5e90cc26',
+                       'metadata': {},
+                       'name': 'Docs',
+                       'start_time': '2023-10-19T17:52:15.438',
+                       'streamed_output_str': [],
+                       'tags': ['map:key:context', 'FAISS'],
+                       'type': 'retriever'}},
+     'streamed_output': []})
+    ----------------------------------------------------------------------
+    RunLog({'final_output': None,
+     'id': 'afe66178-d75f-4c2d-b348-b1d144239cd6',
+     'logs': {'Docs': {'end_time': '2023-10-19T17:52:15.738',
+                       'final_output': {'documents': [Document(page_content='harrison worked at kensho')]},
+                       'id': '88d51118-5756-4891-89c5-2f6a5e90cc26',
+                       'metadata': {},
+                       'name': 'Docs',
+                       'start_time': '2023-10-19T17:52:15.438',
+                       'streamed_output_str': [],
+                       'tags': ['map:key:context', 'FAISS'],
+                       'type': 'retriever'}},
+     'streamed_output': []})
+    ----------------------------------------------------------------------
+    RunLog({'final_output': None,
+     'id': 'afe66178-d75f-4c2d-b348-b1d144239cd6',
+     'logs': {'Docs': {'end_time': '2023-10-19T17:52:15.738',
+                       'final_output': {'documents': [Document(page_content='harrison worked at kensho')]},
+                       'id': '88d51118-5756-4891-89c5-2f6a5e90cc26',
+                       'metadata': {},
+                       'name': 'Docs',
+                       'start_time': '2023-10-19T17:52:15.438',
+                       'streamed_output_str': [],
+                       'tags': ['map:key:context', 'FAISS'],
+                       'type': 'retriever'}},
+     'streamed_output': ['']})
+    ----------------------------------------------------------------------
+    RunLog({'final_output': None,
+     'id': 'afe66178-d75f-4c2d-b348-b1d144239cd6',
+     'logs': {'Docs': {'end_time': '2023-10-19T17:52:15.738',
+                       'final_output': {'documents': [Document(page_content='harrison worked at kensho')]},
+                       'id': '88d51118-5756-4891-89c5-2f6a5e90cc26',
+                       'metadata': {},
+                       'name': 'Docs',
+                       'start_time': '2023-10-19T17:52:15.438',
+                       'streamed_output_str': [],
+                       'tags': ['map:key:context', 'FAISS'],
+                       'type': 'retriever'}},
+     'streamed_output': ['', 'H']})
+    ----------------------------------------------------------------------
+    RunLog({'final_output': None,
+     'id': 'afe66178-d75f-4c2d-b348-b1d144239cd6',
+     'logs': {'Docs': {'end_time': '2023-10-19T17:52:15.738',
+                       'final_output': {'documents': [Document(page_content='harrison worked at kensho')]},
+                       'id': '88d51118-5756-4891-89c5-2f6a5e90cc26',
+                       'metadata': {},
+                       'name': 'Docs',
+                       'start_time': '2023-10-19T17:52:15.438',
+                       'streamed_output_str': [],
+                       'tags': ['map:key:context', 'FAISS'],
+                       'type': 'retriever'}},
+     'streamed_output': ['', 'H', 'arrison']})
+    ----------------------------------------------------------------------
+    RunLog({'final_output': None,
+     'id': 'afe66178-d75f-4c2d-b348-b1d144239cd6',
+     'logs': {'Docs': {'end_time': '2023-10-19T17:52:15.738',
+                       'final_output': {'documents': [Document(page_content='harrison worked at kensho')]},
+                       'id': '88d51118-5756-4891-89c5-2f6a5e90cc26',
+                       'metadata': {},
+                       'name': 'Docs',
+                       'start_time': '2023-10-19T17:52:15.438',
+                       'streamed_output_str': [],
+                       'tags': ['map:key:context', 'FAISS'],
+                       'type': 'retriever'}},
+     'streamed_output': ['', 'H', 'arrison', ' worked']})
+    ----------------------------------------------------------------------
+    RunLog({'final_output': None,
+     'id': 'afe66178-d75f-4c2d-b348-b1d144239cd6',
+     'logs': {'Docs': {'end_time': '2023-10-19T17:52:15.738',
+                       'final_output': {'documents': [Document(page_content='harrison worked at kensho')]},
+                       'id': '88d51118-5756-4891-89c5-2f6a5e90cc26',
+                       'metadata': {},
+                       'name': 'Docs',
+                       'start_time': '2023-10-19T17:52:15.438',
+                       'streamed_output_str': [],
+                       'tags': ['map:key:context', 'FAISS'],
+                       'type': 'retriever'}},
+     'streamed_output': ['', 'H', 'arrison', ' worked', ' at']})
+    ----------------------------------------------------------------------
+    RunLog({'final_output': None,
+     'id': 'afe66178-d75f-4c2d-b348-b1d144239cd6',
+     'logs': {'Docs': {'end_time': '2023-10-19T17:52:15.738',
+                       'final_output': {'documents': [Document(page_content='harrison worked at kensho')]},
+                       'id': '88d51118-5756-4891-89c5-2f6a5e90cc26',
+                       'metadata': {},
+                       'name': 'Docs',
+                       'start_time': '2023-10-19T17:52:15.438',
+                       'streamed_output_str': [],
+                       'tags': ['map:key:context', 'FAISS'],
+                       'type': 'retriever'}},
+     'streamed_output': ['', 'H', 'arrison', ' worked', ' at', ' Kens']})
+    ----------------------------------------------------------------------
+    RunLog({'final_output': None,
+     'id': 'afe66178-d75f-4c2d-b348-b1d144239cd6',
+     'logs': {'Docs': {'end_time': '2023-10-19T17:52:15.738',
+                       'final_output': {'documents': [Document(page_content='harrison worked at kensho')]},
+                       'id': '88d51118-5756-4891-89c5-2f6a5e90cc26',
+                       'metadata': {},
+                       'name': 'Docs',
+                       'start_time': '2023-10-19T17:52:15.438',
+                       'streamed_output_str': [],
+                       'tags': ['map:key:context', 'FAISS'],
+                       'type': 'retriever'}},
+     'streamed_output': ['', 'H', 'arrison', ' worked', ' at', ' Kens', 'ho']})
+    ----------------------------------------------------------------------
+    RunLog({'final_output': None,
+     'id': 'afe66178-d75f-4c2d-b348-b1d144239cd6',
+     'logs': {'Docs': {'end_time': '2023-10-19T17:52:15.738',
+                       'final_output': {'documents': [Document(page_content='harrison worked at kensho')]},
+                       'id': '88d51118-5756-4891-89c5-2f6a5e90cc26',
+                       'metadata': {},
+                       'name': 'Docs',
+                       'start_time': '2023-10-19T17:52:15.438',
+                       'streamed_output_str': [],
+                       'tags': ['map:key:context', 'FAISS'],
+                       'type': 'retriever'}},
+     'streamed_output': ['', 'H', 'arrison', ' worked', ' at', ' Kens', 'ho', '.']})
+    ----------------------------------------------------------------------
+    RunLog({'final_output': None,
+     'id': 'afe66178-d75f-4c2d-b348-b1d144239cd6',
+     'logs': {'Docs': {'end_time': '2023-10-19T17:52:15.738',
+                       'final_output': {'documents': [Document(page_content='harrison worked at kensho')]},
+                       'id': '88d51118-5756-4891-89c5-2f6a5e90cc26',
+                       'metadata': {},
+                       'name': 'Docs',
+                       'start_time': '2023-10-19T17:52:15.438',
+                       'streamed_output_str': [],
+                       'tags': ['map:key:context', 'FAISS'],
+                       'type': 'retriever'}},
+     'streamed_output': ['',
+                         'H',
+                         'arrison',
+                         ' worked',
+                         ' at',
+                         ' Kens',
+                         'ho',
+                         '.',
+                         '']})
+    ----------------------------------------------------------------------
+    RunLog({'final_output': {'output': 'Harrison worked at Kensho.'},
+     'id': 'afe66178-d75f-4c2d-b348-b1d144239cd6',
+     'logs': {'Docs': {'end_time': '2023-10-19T17:52:15.738',
+                       'final_output': {'documents': [Document(page_content='harrison worked at kensho')]},
+                       'id': '88d51118-5756-4891-89c5-2f6a5e90cc26',
+                       'metadata': {},
+                       'name': 'Docs',
+                       'start_time': '2023-10-19T17:52:15.438',
+                       'streamed_output_str': [],
+                       'tags': ['map:key:context', 'FAISS'],
+                       'type': 'retriever'}},
+     'streamed_output': ['',
+                         'H',
+                         'arrison',
+                         ' worked',
+                         ' at',
+                         ' Kens',
+                         'ho',
+                         '.',
+                         '']})
+
+
+Parallelism
+Let's take a look at how LangChain Expression Language supports parallel requests. For example, when using a RunnableParallel (often written as a dictionary) it executes each element in parallel.
+
+from langchain.schema.runnable import RunnableParallel
+
+chain1 = ChatPromptTemplate.from_template("tell me a joke about {topic}") | model
+chain2 = (
+    ChatPromptTemplate.from_template("write a short (2 line) poem about {topic}")
+    | model
+)
+combined = RunnableParallel(joke=chain1, poem=chain2)
+
+
+chain1.invoke({"topic": "bears"})
+
+    CPU times: user 54.3 ms, sys: 0 ns, total: 54.3 ms
+    Wall time: 2.29 s
+
+
+
+
+
+    AIMessage(content="Why don't bears wear shoes?\n\nBecause they already have bear feet!")
+
+
+chain2.invoke({"topic": "bears"})
+
+    CPU times: user 7.8 ms, sys: 0 ns, total: 7.8 ms
+    Wall time: 1.43 s
+
+
+
+
+
+    AIMessage(content="In wild embrace,\nNature's strength roams with grace.")
+
+
+combined.invoke({"topic": "bears"})
+
+    CPU times: user 167 ms, sys: 921 µs, total: 168 ms
+    Wall time: 1.56 s
+
+
+
+
+
+    {'joke': AIMessage(content="Why don't bears wear shoes?\n\nBecause they already have bear feet!"),
+     'poem': AIMessage(content="Fierce and wild, nature's might,\nBears roam the woods, shadows of the night.")}
+
+
+Parallelism on batches
+Parallelism can be combined with other runnables. Let's try to use parallelism with batches.
+
+chain1.batch([{"topic": "bears"}, {"topic": "cats"}])
+
+    CPU times: user 159 ms, sys: 3.66 ms, total: 163 ms
+    Wall time: 1.34 s
+
+
+
+
+
+    [AIMessage(content="Why don't bears wear shoes?\n\nBecause they already have bear feet!"),
+     AIMessage(content="Sure, here's a cat joke for you:\n\nWhy don't cats play poker in the wild?\n\nBecause there are too many cheetahs!")]
+
+
+chain2.batch([{"topic": "bears"}, {"topic": "cats"}])
+
+    CPU times: user 165 ms, sys: 0 ns, total: 165 ms
+    Wall time: 1.73 s
+
+
+
+
+
+    [AIMessage(content="Silent giants roam,\nNature's strength, love's emblem shown."),
+     AIMessage(content='Whiskers aglow, paws tiptoe,\nGraceful hunters, hearts aglow.')]
+
+
+combined.batch([{"topic": "bears"}, {"topic": "cats"}])
+
+    CPU times: user 507 ms, sys: 125 ms, total: 632 ms
+    Wall time: 1.49 s
+
+
+
+
+
+    [{'joke': AIMessage(content="Why don't bears wear shoes?\n\nBecause they already have bear feet!"),
+      'poem': AIMessage(content="Majestic bears roam,\nNature's wild guardians of home.")},
+     {'joke': AIMessage(content="Sure, here's a cat joke for you:\n\nWhy did the cat sit on the computer?\n\nBecause it wanted to keep an eye on the mouse!"),
+      'poem': AIMessage(content='Whiskers twitch, eyes gleam,\nGraceful creatures, feline dream.')}]
+
+

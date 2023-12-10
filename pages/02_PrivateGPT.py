@@ -14,6 +14,7 @@ st.set_page_config(
     page_icon="📃",
 )
 
+
 class ChatCallbackHandler(BaseCallbackHandler):
     message = ""
 
@@ -27,18 +28,17 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message += token
         self.message_box.markdown(self.message)
 
+
 llm = ChatOllama(
     model="mistral:latest",
+    num_gpu=1,
     temperature=0.1,
     streaming=True,
-    callback=[
-        ChatCallbackHandler()
-    ]
+    callbacks=[
+        ChatCallbackHandler(),
+    ],
 )
 
-
-if "messages" not in st.session_state:
-    st.session_state["messages"] = []
 
 @st.cache_data(show_spinner="Embedding file...")
 def embed_file(file):
@@ -54,9 +54,7 @@ def embed_file(file):
     )
     loader = UnstructuredFileLoader(file_path)
     docs = loader.load_and_split(text_splitter=splitter)
-    embeddings = OllamaEmbeddings(
-        model="mistral:latest"
-    )
+    embeddings = OllamaEmbeddings(model="mistral:latest", num_gpu=1)
     cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache_dir)
     vectorstore = FAISS.from_documents(docs, cached_embeddings)
     retriever = vectorstore.as_retriever()
@@ -71,7 +69,7 @@ def send_message(message, role, save=True):
     with st.chat_message(role):
         st.markdown(message)
     if save:
-        st.session_state["messages"].append({"message":message, "role": role})
+        save_message(message, role)
 
 
 def paint_history():
@@ -82,23 +80,19 @@ def paint_history():
             save=False,
         )
 
+
 def format_docs(docs):
     return "\n\n".join(document.page_content for document in docs)
 
 
-prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            """
-            Answer the question using ONLY the following context. If you don't know the answer just say you don't know. DON'T make anything up.
-            
-            Context: {context}
-            """,
-        ),
-        ("human", "{question}"),
-    ]
+prompt = ChatPromptTemplate.from_template(
+    """Answer the question using ONLY the following context and not your training data. If you don't know the answer just say you don't know. DON'T make anything up.
+    
+    Context: {context}
+    Question:{question}
+    """
 )
+
 
 st.title("PrivateGPT")
 
@@ -120,19 +114,22 @@ with st.sidebar:
 
 if file:
     retriever = embed_file(file)
-
-    send_message("I'm ready.", "ai", save=False)
+    send_message("I'm ready! Ask away!", "ai", save=False)
     paint_history()
-    message = st.chat_input("Ask anything about your file")
-
+    message = st.chat_input("Ask anything about your file...")
     if message:
         send_message(message, "human")
-        chain = {
-            "context" : retriever | RunnableLambda(format_docs),
-            "question": RunnablePassthrough()
-        } | prompt | llm
-        response = chain.invoke(message)
-        send_message(response.content, "ai")
-        
+        chain = (
+            {
+                "context": retriever | RunnableLambda(format_docs),
+                "question": RunnablePassthrough(),
+            }
+            | prompt
+            | llm
+        )
+        with st.chat_message("ai"):
+            chain.invoke(message)
+
+
 else:
     st.session_state["messages"] = []

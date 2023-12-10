@@ -28,7 +28,7 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message_box.markdown(self.message)
 
 llm = ChatOllama(
-    model="mistral:lastest",
+    model="mistral:latest",
     temperature=0.1,
     streaming=True,
     callback=[
@@ -55,7 +55,7 @@ def embed_file(file):
     loader = UnstructuredFileLoader(file_path)
     docs = loader.load_and_split(text_splitter=splitter)
     embeddings = OllamaEmbeddings(
-        model="mistral:lastest"
+        model="mistral:latest"
     )
     cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache_dir)
     vectorstore = FAISS.from_documents(docs, cached_embeddings)
@@ -100,7 +100,7 @@ prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
-st.title("DocumentGPT")
+st.title("PrivateGPT")
 
 st.markdown(
     """

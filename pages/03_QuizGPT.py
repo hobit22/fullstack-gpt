@@ -5,7 +5,15 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.callbacks import StreamingStdOutCallbackHandler
 import streamlit as st
 from langchain.retrievers import WikipediaRetriever
+from langchain.schema import BaseOutputParser
+import json
 
+class JsonOutputParser(BaseOutputParser):
+    def parse(self, text):
+        text = text.replace("```", "").replace("json","")
+        return json.loads(text)
+    
+output_parser = JsonOutputParser()
 
 st.set_page_config(
     page_title="QuizGPT",
@@ -246,12 +254,8 @@ else:
     start = st.button("Generate Quiz")
 
     if start:
-        questions_response = questions_chain.invoke(docs)
-        st.write(questions_response.content)
+        chain = {"context" : questions_chain} | formatting_chain | output_parser
+        
+        response = chain.invoke(docs)
 
-        formatting_response = formatting_chain({
-            "context" : questions_response.content
-        })
-
-        st.write(formatting_response.content)
-         
+        st.write(response)

@@ -211,10 +211,11 @@ def split_file(file):
     docs = loader.load_and_split(text_splitter=splitter)
     return docs
 
-@st.cache_data(show_spinner="Making Quiz...")
+@st.cache_data(show_spinner="Making quiz...")
 def run_quiz_chain(_docs, topic):
-    chain = {"context" : questions_chain} | formatting_chain | output_parser
+    chain = {"context": questions_chain} | formatting_chain | output_parser
     return chain.invoke(_docs)
+
 
 @st.cache_data(show_spinner="Searching Wikipedia...")
 def wiki_search(term):
@@ -254,8 +255,18 @@ if not docs:
     """
     )
 else:
-    start = st.button("Generate Quiz")
-
-    if start:
-        response = run_quiz_chain(docs, topic if topic else file.name)
-        st.write(response)
+    response = run_quiz_chain(docs, topic if topic else file.name)
+    st.write(response)
+    with st.form("questions_form"):
+        for question in response["questions"]:
+            st.write(question["question"])
+            value = st.radio(
+                "Select an options", 
+                [answer["answer"] for answer in question["answers"]],
+                index=None,
+            )
+            if {"answer": value, "correct": True} in question["answers"]:
+                st.success("Correct!")
+            elif value is not None:
+                st.error("Wrong!")
+        button = st.form_submit_button()

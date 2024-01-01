@@ -8,10 +8,17 @@ from langchain.vectorstores.faiss import FAISS
 from langchain.chat_models import ChatOpenAI
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.document_loaders import UnstructuredHTMLLoader
-
+from langchain.schema import BaseOutputParser
+import json
 import streamlit as st
 from dotenv import load_dotenv
 load_dotenv()
+class JsonOutputParser(BaseOutputParser):
+    def parse(self, text):
+        text = text.replace("```", "").replace("json","")
+        return json.loads(text)
+    
+output_parser = JsonOutputParser()
 
 class ChatCallbackHandler(BaseCallbackHandler):
     message = ""
@@ -76,6 +83,11 @@ def paint_history():
 def format_docs(docs):
     return "\n\n".join(document.page_content for document in docs)
 
+def makePythonFile(input):
+    f=open("test.python", "a+")
+    f.write(input)
+    f.close()
+
 
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -84,6 +96,8 @@ prompt = ChatPromptTemplate.from_messages(
             """
              너는 HTML 을 파싱하는 전문가야. 
              읽어들인 파일에서 사용자 question의 엘리멘트를 찾아서 실행하는 셀레니움코드를 화면에 보여줘. 
+             python 코드만 return 한다.
+             코드에 대한 설명도 붙이지 않는다.
             
             Context: {context}
             """,
@@ -116,4 +130,7 @@ if choice != "":
         | llm
     )
     with st.chat_message("ai"):
-        chain.invoke(choice)
+        response = chain.invoke(choice)
+
+        response["content"]
+        # makePythonFile(response["content"])

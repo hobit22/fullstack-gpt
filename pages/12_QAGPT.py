@@ -36,6 +36,7 @@ class ChatCallbackHandler(BaseCallbackHandler):
 
 llm = ChatOpenAI(
     temperature=0.1,
+    model="gpt-4",
     streaming=True,
     callbacks=[
         ChatCallbackHandler(),
@@ -112,8 +113,7 @@ prompt = ChatPromptTemplate.from_messages(
              selenium의 driver는 다음과 같다.
             driver = webdriver.Chrome()
             html 파일 경로는 다음과 같다.
-            /case1.html
-            selenium의 가장 최신 버전을 사용한다.
+            C:/Users/hoqei/IdeaProjects/fullstack-gpt/case1.html
 
 
             Context: {context}

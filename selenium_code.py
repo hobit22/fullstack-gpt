@@ -1,20 +1,14 @@
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 
-# Selenium 드라이버 초기화
 driver = webdriver.Chrome()
 
-# HTML 파일 로드
-file_path = "/case1.html"
-driver.get("file://" + file_path)
+driver.get('file:///C:/Users/hoqei/IdeaProjects/fullstack-gpt/case1.html')
 
-# 사용자 question 엘리먼트 찾기
-question_element = driver.find_element_by_xpath("//div[contains(text(), '중1(상)')]")
+# 사용자 question의 엘리먼트를 찾기
+element = driver.find_element(By.XPATH, '//div[text()="중1(상)"]')
 
-# question 엘리먼트 클릭
-question_element.click()
+print(element)
 
-# 실행 코드 작성
-# ...
-
-# 드라이버 종료
-driver.quit()
+# 엘리먼트 클릭
+element.click()

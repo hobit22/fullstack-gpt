@@ -43,9 +43,9 @@ llm = ChatOpenAI(
 )
 
 
-@st.cache_data(show_spinner="Embedding file...")
+@st.cache_resource(show_spinner="Embedding file...")
 def embed_file():
-    cache_dir = LocalFileStore(f"./.cache/embeddings/case1")
+    cache_dir = LocalFileStore(f".cache/embeddings/case1")
     loader = UnstructuredHTMLLoader('case1.html')
     splitter = CharacterTextSplitter.from_tiktoken_encoder(
         separator="\n",
@@ -84,9 +84,22 @@ def format_docs(docs):
     return "\n\n".join(document.page_content for document in docs)
 
 def makePythonFile(input):
-    f=open("test.python", "a+")
-    f.write(input)
-    f.close()
+    # response에서 content 필드 추출
+    content = input.content
+
+    # Python 코드 추출
+    # "```python"과 "```" 사이의 내용을 추출
+    start = content.find("```python") + len("```python\n")
+    end = content.rfind("```")
+    python_code = content[start:end].strip()
+
+    # 추출된 Python 코드를 파일로 저장
+    file_name = "selenium_code.py"
+    with open(file_name, "w", encoding="utf-8") as file:
+        file.write(python_code)
+
+    print(f"파일 '{file_name}'에 코드 저장 완료.")
+    return file_name
 
 
 prompt = ChatPromptTemplate.from_messages(
@@ -96,9 +109,13 @@ prompt = ChatPromptTemplate.from_messages(
             """
              너는 HTML 을 파싱하는 전문가야. 
              읽어들인 파일에서 사용자 question의 엘리멘트를 찾아서 실행하는 셀레니움코드를 화면에 보여줘. 
-             python 코드만 return 한다.
-             코드에 대한 설명도 붙이지 않는다.
-            
+             selenium의 driver는 다음과 같다.
+            driver = webdriver.Chrome()
+            html 파일 경로는 다음과 같다.
+            /case1.html
+            selenium의 가장 최신 버전을 사용한다.
+
+
             Context: {context}
             """,
         ),
@@ -131,6 +148,6 @@ if choice != "":
     )
     with st.chat_message("ai"):
         response = chain.invoke(choice)
-
-        response["content"]
-        # makePythonFile(response["content"])
+        file_name = makePythonFile(response)
+        with open(file_name, "r", encoding="utf-8") as file:
+            exec(file.read())
